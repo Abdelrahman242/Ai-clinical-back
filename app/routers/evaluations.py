@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
 from ..database import get_db
+from ..core.access import get_accessible_project
 from ..core.pipeline import run_pipeline
 from ..core import safety
 
@@ -25,9 +26,7 @@ def run_evaluation(
     - Citation Accuracy       -> citation_count > 0 في الحالات المتوقع فيها إجابة
     - Faithfulness / Unsupported Claim Rate -> safety.unsupported_claims
     """
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    get_accessible_project(db, project_id, current_user)
 
     if not payload.cases:
         raise HTTPException(status_code=400, detail="لازم تبعت case واحدة على الأقل")
