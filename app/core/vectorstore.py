@@ -98,6 +98,9 @@ def similarity_search_with_score(
         # نحوّل لـ float بايثون عادي هنا عشان أي حاجة تانية في السيستم (زي json.dumps)
         # متتعقدش بسبب numpy.float32 اللي FAISS بيرجعها
         distance = float(distance)
-        similarity = 1.0 / (1.0 + max(distance, 0.0))
+        # With normalized embeddings, FAISS L2 distance maps to cosine
+        # similarity as cos = 1 - distance^2 / 2. Clamp for safe thresholds.
+        similarity = 1.0 - (max(distance, 0.0) ** 2) / 2.0
+        similarity = max(0.0, min(1.0, similarity))
         results.append((doc, float(similarity)))
     return results

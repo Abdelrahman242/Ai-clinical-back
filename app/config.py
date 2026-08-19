@@ -40,7 +40,12 @@ DATABASE_URL = os.getenv("SUPABASE_DB_URL") or os.getenv(
 # ------------------------------------------------------------------
 # Embeddings / LLM
 # ------------------------------------------------------------------
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+# Multilingual model: Arabic queries can retrieve English guideline chunks semantically.
+EMBEDDING_MODEL = os.getenv(
+    "EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+)
+EMBEDDING_NORMALIZE = os.getenv("EMBEDDING_NORMALIZE", "true").lower() in ("1", "true", "yes")
+ENABLE_QUERY_EXPANSION = os.getenv("ENABLE_QUERY_EXPANSION", "false").lower() in ("1", "true", "yes")
 # ملحوظة: Groq عملوا deprecate لـ llama-3.3-70b-versatile و llama-3.1-8b-instant.
 # البديل المتاح حاليًا: openai/gpt-oss-120b (قوي) أو openai/gpt-oss-20b (أسرع/أخف).
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")

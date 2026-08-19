@@ -20,6 +20,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from . import safety
 from .llm import get_llm, get_prompt_template, get_small_talk_prompt
+from ..config import ENABLE_QUERY_EXPANSION
 from .vectorstore import similarity_search_with_score
 
 
@@ -96,7 +97,7 @@ def run_pipeline(
     # ----------------------------------------------------------------
     # 2) Retrieve Context
     # ----------------------------------------------------------------
-    retrieval_query = _expand_hypertension_query(query)
+    retrieval_query = _expand_hypertension_query(query) if ENABLE_QUERY_EXPANSION else query
     try:
         retrieved = similarity_search_with_score(project_id, retrieval_query, k=top_k)
     except Exception:  # noqa: BLE001
@@ -203,7 +204,7 @@ def run_pipeline(
 
 
 def _expand_hypertension_query(query: str) -> str:
-    """Add bilingual clinical terms so English guideline chunks match Arabic questions."""
+    """Optional legacy expansion for deployments that explicitly enable it."""
     q = query.lower()
     hypertension_terms = (
         "ضغط الدم", "ضغط", "blood pressure", "hypertension", "high blood pressure",

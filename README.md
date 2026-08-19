@@ -146,7 +146,19 @@ python scripts/seed_hypertension_sources.py <PROJECT_ID>
 
 المحادثات أصبحت معزولة حسب `user_id`: قائمة المحادثات، قراءة الرسائل، وإرسال رسالة جديدة لا تعمل إلا إذا كانت المحادثة مملوكة للمستخدم المصادق عليه. عند محاولة الوصول إلى محادثة مستخدم آخر يرجع الـAPI حالة `404` عمدًا حتى لا يكشف وجود المعرّف. سجلات المحادثات القديمة التي لا تحتوي `user_id` لا تُعرض تلقائيًا لأي مستخدم.
 
-يدعم الخادم مزودي Groq وOpenAI-compatible. الوضع الافتراضي `LLM_PROVIDER=auto` يحافظ على السلوك السابق ويفضل Groq عند وجود `GROQ_API_KEY`؛ استخدم `LLM_PROVIDER=openai` فقط عند الرغبة في OpenAI، مع ضبط `OPENAI_MODEL` إلى model ID موجود فعليًا في ذلك endpoint. إذا تعطل مزود النموذج، يرجع الشات حالة 502 واضحة بدل 500 غامض. كما أضيف توسيع ثنائي اللغة لاستعلامات ضغط الدم حتى تتطابق الأسئلة العربية مع نصوص الإرشادات الإنجليزية.
+يدعم الخادم مزودي Groq وOpenAI-compatible. الوضع الافتراضي `LLM_PROVIDER=auto` يحافظ على السلوك السابق ويفضل Groq عند وجود `GROQ_API_KEY`؛ استخدم `LLM_PROVIDER=openai` فقط عند الرغبة في OpenAI، مع ضبط `OPENAI_MODEL` إلى model ID موجود فعليًا في ذلك endpoint. إذا تعطل مزود النموذج، يرجع الشات حالة 502 واضحة بدل 500 غامض.
+
+## Semantic Retrieval
+
+البحث يستخدم embeddings وFAISS semantic similarity، وليس بحث كلمات حرفية. تم ضبط النموذج الافتراضي إلى `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` لدعم السؤال بالعربية مع مستندات الإرشادات الإنجليزية، مع `EMBEDDING_NORMALIZE=true` وتحويل مسافة FAISS إلى cosine-equivalent similarity. تم إيقاف query expansion الإجباري؛ يمكن تشغيله فقط صراحة عبر `ENABLE_QUERY_EXPANSION=true` للتوافق القديم.
+
+بعد تغيير نموذج embeddings أو قيمة normalization، يجب إعادة فهرسة المستندات القديمة لأن الفهرس السابق تم إنشاؤه بمتجهات مختلفة:
+
+```bash
+python scripts/reindex_all_sources.py
+```
+
+اختبار semantic فعلي بصياغة عربية مختلفة عن نص المصدر اجتاز التحقق، كما اجتازت اختبارات auth وEnum وAPI preflight.
 
 ## Supabase Database
 
