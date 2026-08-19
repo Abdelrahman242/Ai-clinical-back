@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
 from ..database import get_db
+from ..core.access import get_accessible_document, get_accessible_project
 from ..core.jobs import run_ingest_job
 
 router = APIRouter(tags=["Documents"])
@@ -18,7 +19,8 @@ router = APIRouter(tags=["Documents"])
 # app/core/auto_ingest.py). الـ endpoint ده اتسيب موجود بس كـ fallback يدوي
 # (مفيد أساسًا لتسجيل مستند بـ source_url بدل ما تحتاج تنزّله يدوي، أو لو
 # عايز تتحكم في العنوان/الناشر يدويًا قبل ما يوصله الـ scanner).
-# متاح للأدمن بس عشان الملفات تفضل متحكم فيها من جوه السيستم.
+# متاح للأدمن بس عشان الملفات تفضل متحكم فيها من جوه السيستم، وبيتأكد كمان
+# إن المشروع ده أصلاً موجود (require_admin بيفتح لكل مشاريع السيستم للأدمن).
 # ============================================================
 @router.post(
     "/api/v1/projects/{project_id}/documents",
@@ -28,11 +30,9 @@ def register_document(
     project_id: str,
     payload: schemas.DocumentRegister,
     db: Session = Depends(get_db),
-    _admin: models.User = Depends(auth.require_admin),
+    admin: models.User = Depends(auth.require_admin),
 ):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    get_accessible_project(db, project_id, admin)
 
     if not payload.source_ref and not payload.source_url:
         raise HTTPException(
@@ -63,6 +63,8 @@ def list_documents(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    get_accessible_project(db, project_id, current_user)
+
     return (
         db.query(models.Document)
         .filter(models.Document.project_id == project_id)
@@ -83,11 +85,9 @@ def ingest_document(
     payload: schemas.DocumentIngestRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _admin: models.User = Depends(auth.require_admin),
+    admin: models.User = Depends(auth.require_admin),
 ):
-    document = db.query(models.Document).filter(models.Document.id == document_id).first()
-    if not document:
-        raise HTTPException(status_code=404, detail="المستند غير موجود")
+    document = get_accessible_document(db, document_id, admin)
 
     job = models.IngestJob(document_id=document.id, status=models.JobStatus.QUEUED)
     document.status = models.DocumentStatus.QUEUED
@@ -111,10 +111,7 @@ def document_status(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    document = db.query(models.Document).filter(models.Document.id == document_id).first()
-    if not document:
-        raise HTTPException(status_code=404, detail="المستند غير موجود")
-    return document
+    return get_accessible_document(db, document_id, current_user)
 
 
 # ============================================================
@@ -129,4 +126,7 @@ def get_job(
     job = db.query(models.IngestJob).filter(models.IngestJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="الـ job غير موجود")
+
+    # الـ job مربوط بمستند مربوط بمشروع — بنتأكد إن اليوزر يملك المشروع ده
+    get_accessible_document(db, job.document_id, current_user)
     return job
