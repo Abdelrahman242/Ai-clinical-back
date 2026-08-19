@@ -1,0 +1,58 @@
+[
+  {
+    "key": "who-hypertension-factsheet",
+    "title": "WHO: Hypertension fact sheet",
+    "publisher": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/hypertension",
+    "topics": ["definition", "symptoms", "risk factors", "complications", "prevention", "lifestyle", "treatment"]
+  },
+  {
+    "key": "who-pharmacological-guideline",
+    "title": "WHO guideline for the pharmacological treatment of hypertension in adults",
+    "publisher": "World Health Organization",
+    "url": "https://iris.who.int/server/api/core/bitstreams/f062769d-f075-4a00-87af-0a2106e0bd04/content",
+    "topics": ["diagnosis", "treatment thresholds", "follow-up", "targets", "monotherapy", "combination therapy", "adult non-pregnant patients"]
+  },
+  {
+    "key": "cdc-about-high-blood-pressure",
+    "title": "CDC: About High Blood Pressure",
+    "publisher": "U.S. Centers for Disease Control and Prevention",
+    "url": "https://www.cdc.gov/high-blood-pressure/about/index.html",
+    "topics": ["definition", "symptoms", "causes", "risk factors", "organ damage", "prevention"]
+  },
+  {
+    "key": "cdc-measure-blood-pressure",
+    "title": "CDC: How to measure your blood pressure",
+    "publisher": "U.S. Centers for Disease Control and Prevention",
+    "url": "https://www.cdc.gov/high-blood-pressure/measure/index.html",
+    "topics": ["home monitoring", "measurement technique", "cuff", "readings", "diagnosis"]
+  },
+  {
+    "key": "cdc-pregnancy",
+    "title": "CDC: High Blood Pressure During Pregnancy",
+    "publisher": "U.S. Centers for Disease Control and Prevention",
+    "url": "https://www.cdc.gov/high-blood-pressure/about/high-blood-pressure-during-pregnancy.html",
+    "topics": ["pregnancy", "preeclampsia", "warning signs", "maternal health", "newborn health"]
+  },
+  {
+    "key": "nice-adult-hypertension",
+    "title": "NICE NG136: Hypertension in adults: diagnosis and management",
+    "publisher": "National Institute for Health and Care Excellence",
+    "url": "https://www.nice.org.uk/guidance/ng136",
+    "topics": ["diagnosis", "ABPM", "HBPM", "treatment steps", "monitoring", "targets", "lifestyle", "cardiovascular risk"]
+  },
+  {
+    "key": "nice-pregnancy-hypertension",
+    "title": "NICE NG133: Hypertension in pregnancy: diagnosis and management",
+    "publisher": "National Institute for Health and Care Excellence",
+    "url": "https://www.nice.org.uk/guidance/ng133",
+    "topics": ["pregnancy", "chronic hypertension", "gestational hypertension", "pre-eclampsia", "medicines", "postpartum care"]
+  },
+  {
+    "key": "aha-acc-2025-guideline",
+    "title": "2025 AHA/ACC guideline for prevention, detection, evaluation, and management of high blood pressure in adults",
+    "publisher": "American Heart Association / American College of Cardiology",
+    "url": "https://www.ahajournals.org/doi/10.1161/HYP.0000000000000249",
+    "topics": ["classification", "prevention", "evaluation", "management", "cardiovascular risk", "adult hypertension"]
+  }
+]

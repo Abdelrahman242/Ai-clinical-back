@@ -18,12 +18,13 @@ from pathlib import Path
 from typing import List
 
 from langchain_community.document_loaders import PyMuPDFLoader, TextLoader
+from bs4 import BeautifulSoup
 from langchain_core.documents import Document as LCDocument
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from ..config import CHUNK_OVERLAP, CHUNK_SIZE, SYSTEM_SOURCES_DIR
 
-ALLOWED_EXTENSIONS = {".pdf", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".txt", ".html", ".htm"}
 
 # هيدرات شائعة في أدلة WHO/CDC/NICE بنستخدمها كإشارة لبداية section جديد
 _SECTION_HEADING_RE = re.compile(
@@ -81,20 +82,27 @@ def load_and_split_file(
     chunk_overlap: int = CHUNK_OVERLAP,
 ) -> List[LCDocument]:
     """
-    بيقرأ الملف (PDF/TXT) وبيقسمه لـ chunks بتحافظ على حدود الـ section،
+    بيقرأ الملف (PDF/TXT/HTML) وبيقسمه لـ chunks بتحافظ على حدود الـ section،
     وبيحط metadata schema كامل مع كل chunk.
     """
     ext = file_path.suffix.lower()
 
     if ext not in ALLOWED_EXTENSIONS:
-        raise ValueError(f"نوع الملف غير مدعوم: {ext} (المتاح حاليًا: pdf, txt)")
+        raise ValueError(f"نوع الملف غير مدعوم: {ext} (المتاح حاليًا: pdf, txt, html, htm)")
 
     if ext == ".pdf":
         loader = PyMuPDFLoader(str(file_path))
+        pages = loader.load()  # صفحة/عنصر لكل Document, بيحافظ على page number في metadata
+    elif ext in {".html", ".htm"}:
+        html = file_path.read_text(encoding="utf-8", errors="ignore")
+        soup = BeautifulSoup(html, "html.parser")
+        for node in soup(["script", "style", "noscript", "svg"]):
+            node.decompose()
+        text = soup.get_text("\\n", strip=True)
+        pages = [LCDocument(page_content=text, metadata={"page": 0})]
     else:
         loader = TextLoader(str(file_path), encoding="utf-8")
-
-    pages = loader.load()  # صفحة/عنصر لكل Document, بيحافظ على page number في metadata
+        pages = loader.load()  # صفحة/عنصر لكل Document, بيحافظ على page number في metadata
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,

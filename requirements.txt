@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 python-multipart
+beautifulsoup4
 
 # Database & Auth
 sqlalchemy
@@ -11,6 +12,7 @@ python-jose[cryptography]
 
 # LLM
 langchain-groq
+langchain-openai
 langchain-core
 langchain-community
 langchain-text-splitters

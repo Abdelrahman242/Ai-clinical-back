@@ -6,6 +6,9 @@ app/core/jobs.py
 التقدم (زي أي async pipeline حقيقي).
 """
 
+from pathlib import Path
+from urllib.parse import urlparse
+
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -33,7 +36,14 @@ def run_ingest_job(job_id: str, document_id: str, reset: bool) -> None:
             if document.source_ref:
                 path = chunking.resolve_source_path(document.project_id, document.source_ref)
             elif document.source_url:
-                filename = document.source_url.rsplit("/", 1)[-1] or f"{document.id}.pdf"
+                url_path = urlparse(document.source_url).path.lower()
+                url_name = Path(url_path).name
+                if url_name.endswith((".pdf", ".txt", ".html", ".htm")):
+                    filename = url_name
+                elif "/bitstreams/" in url_path or url_path.endswith("/content"):
+                    filename = f"{document.id}.pdf"
+                else:
+                    filename = f"{document.id}.html"
                 path = chunking.fetch_if_url(document.project_id, document.source_url, filename)
             else:
                 raise ValueError("المستند مفيهوش source_ref ولا source_url")

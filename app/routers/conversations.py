@@ -50,7 +50,10 @@ def list_conversations(
 
     return (
         db.query(models.Conversation)
-        .filter(models.Conversation.project_id == project_id)
+        .filter(
+            models.Conversation.project_id == project_id,
+            models.Conversation.user_id == current_user.id,
+        )
         .order_by(models.Conversation.created_at.desc())
         .all()
     )
@@ -73,7 +76,7 @@ def post_message(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    conversation = get_accessible_conversation(db, conversation_id, current_user)
+    conversation = _get_private_conversation(db, conversation_id, current_user)
 
     # آخر 10 رسايل عشان الـ context history
     past = (
@@ -133,8 +136,7 @@ def get_messages(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    get_accessible_conversation(db, conversation_id, current_user)
-
+    _get_private_conversation(db, conversation_id, current_user)
     messages = (
         db.query(models.Message)
         .filter(models.Message.conversation_id == conversation_id)
@@ -142,6 +144,17 @@ def get_messages(
         .all()
     )
     return [_to_message_response(m) for m in messages]
+
+
+def _get_private_conversation(
+    db: Session, conversation_id: str, user: models.User
+) -> models.Conversation:
+    """Enforce both project access and per-user conversation privacy."""
+    conversation = get_accessible_conversation(db, conversation_id, user)
+    if conversation.user_id != user.id:
+        # Do not reveal another user's conversation, even to project admins.
+        raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
+    return conversation
 
 
 def _to_message_response(m: models.Message) -> schemas.MessageResponse:

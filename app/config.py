@@ -40,6 +40,8 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM
 # البديل المتاح حاليًا: openai/gpt-oss-120b (قوي) أو openai/gpt-oss-20b (أسرع/أخف).
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
 
 # ------------------------------------------------------------------
 # Chunking

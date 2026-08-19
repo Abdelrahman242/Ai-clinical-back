@@ -2,8 +2,9 @@ from functools import lru_cache
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
-from ..config import GROQ_API_KEY, LLM_MODEL
+from ..config import GROQ_API_KEY, LLM_MODEL, OPENAI_API_BASE, OPENAI_API_KEY
 
 SYSTEM_PROMPT = """
 You are a clinical evidence assistant. The retrieved guideline text is the
@@ -84,6 +85,19 @@ def get_small_talk_prompt() -> ChatPromptTemplate:
 
 @lru_cache(maxsize=1)
 def get_llm():
+    # Prefer the OpenAI-compatible gateway when configured. This is the
+    # runtime used by the deployed backend and avoids silently depending on a
+    # missing Groq-only key.
+    if OPENAI_API_KEY:
+        kwargs = {
+            "model": LLM_MODEL,
+            "api_key": OPENAI_API_KEY,
+            "temperature": 0.1,
+        }
+        if OPENAI_API_BASE:
+            kwargs["base_url"] = OPENAI_API_BASE
+        return ChatOpenAI(**kwargs)
+
     if not GROQ_API_KEY:
         raise RuntimeError(
             "GROQ_API_KEY مش متظبط. حط قيمته في .env (خد الـ key من "

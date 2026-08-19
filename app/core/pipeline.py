@@ -96,7 +96,19 @@ def run_pipeline(
     # ----------------------------------------------------------------
     # 2) Retrieve Context
     # ----------------------------------------------------------------
-    retrieved = similarity_search_with_score(project_id, query, k=top_k)
+    retrieval_query = _expand_hypertension_query(query)
+    try:
+        retrieved = similarity_search_with_score(project_id, retrieval_query, k=top_k)
+    except Exception:  # noqa: BLE001
+        return PipelineResult(
+            answer=(
+                "حصلت مشكلة في قراءة فهرس المصادر. تأكد أن مصادر ضغط الدم تم تحميلها "
+                "وعمل ingest لها على نفس المشروع، ثم أعد المحاولة."
+            ),
+            refused=True,
+            risk_flag=risk.risk,
+            confidence=safety.CONFIDENCE_INSUFFICIENT,
+        )
     max_score = max((score for _, score in retrieved), default=0.0)
 
     # ----------------------------------------------------------------
@@ -121,16 +133,40 @@ def run_pipeline(
     # ----------------------------------------------------------------
     # 4) Grounded Generation
     # ----------------------------------------------------------------
-    llm = get_llm()
-    prompt = get_prompt_template()
+    try:
+        llm = get_llm()
+        prompt = get_prompt_template()
+    except Exception:  # noqa: BLE001
+        return PipelineResult(
+            answer=(
+                "حصلت مشكلة في تشغيل نموذج الإجابة. تأكد من ضبط إعدادات مزود "
+                "النموذج على الخادم ثم أعد المحاولة."
+            ),
+            refused=True,
+            risk_flag=risk.risk,
+            confidence=safety.CONFIDENCE_LOW,
+            max_retrieval_score=max_score,
+        )
 
     final_prompt = prompt.invoke({
         "context": context_text,
         "question": query,
         "chat_history": _build_lc_history(chat_history),
     })
-    response = llm.invoke(final_prompt)
-    answer_text = response.content
+    try:
+        response = llm.invoke(final_prompt)
+        answer_text = response.content
+    except Exception:  # noqa: BLE001
+        return PipelineResult(
+            answer=(
+                "المصادر اتوجدت، لكن حصل عطل مؤقت أثناء توليد الإجابة. "
+                "أعد المحاولة بعد لحظات، وإذا استمرت المشكلة راجع إعدادات نموذج اللغة."
+            ),
+            refused=True,
+            risk_flag=risk.risk,
+            confidence=safety.CONFIDENCE_LOW,
+            max_retrieval_score=max_score,
+        )
 
     # ----------------------------------------------------------------
     # 5) Validate Answer / Citations (unsupported claim detection)
@@ -164,3 +200,15 @@ def run_pipeline(
         risk_flag=risk.risk,
         max_retrieval_score=max_score,
     )
+
+
+def _expand_hypertension_query(query: str) -> str:
+    """Add bilingual clinical terms so English guideline chunks match Arabic questions."""
+    q = query.lower()
+    hypertension_terms = (
+        "ضغط الدم", "ضغط", "blood pressure", "hypertension", "high blood pressure",
+        "الضغط المرتفع", "الضغط العالي", "الضغط المنخفض", "الانقباضي", "الانبساطي",
+    )
+    if any(term in q for term in hypertension_terms):
+        return query + " hypertension high blood pressure blood pressure systolic diastolic treatment diagnosis measurement"
+    return query
