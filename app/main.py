@@ -34,9 +34,14 @@ def _launch_auto_ingest_scanner():
     """
     start_background_scanner()
 
+# Allow Vercel frontend domain plus localhost for local dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://ai-clinical-vert.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
