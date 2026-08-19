@@ -1,0 +1,27 @@
+# Backend / API
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database & Auth
+sqlalchemy
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]
+
+# LLM
+langchain-groq
+langchain-core
+langchain-community
+langchain-text-splitters
+
+# Vector store & embeddings
+faiss-cpu
+sentence-transformers
+langchain-huggingface
+
+# Document loaders
+pymupdf
+
+# Config
+python-dotenv
