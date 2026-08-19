@@ -19,7 +19,7 @@ from typing import List, Optional
 from langchain_core.messages import AIMessage, HumanMessage
 
 from . import safety
-from .llm import get_llm, get_prompt_template
+from .llm import get_llm, get_prompt_template, get_small_talk_prompt
 from .vectorstore import similarity_search_with_score
 
 
@@ -36,10 +36,17 @@ class PipelineCitation:
 class PipelineResult:
     answer: str
     citations: List[PipelineCitation] = field(default_factory=list)
-    confidence: str = safety.CONFIDENCE_INSUFFICIENT
+    confidence: Optional[str] = safety.CONFIDENCE_INSUFFICIENT
     refused: bool = False
     risk_flag: str = safety.RISK_ALLOWED
     max_retrieval_score: float = 0.0
+
+
+def _build_lc_history(chat_history: list):
+    return [
+        HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"])
+        for m in chat_history
+    ]
 
 
 def run_pipeline(
@@ -63,6 +70,27 @@ def run_pipeline(
             refused=True,
             risk_flag=risk.risk,
             confidence=safety.CONFIDENCE_INSUFFICIENT,
+        )
+
+    # ----------------------------------------------------------------
+    # 1.5) كلام عابر/تحية — يرد بشكل طبيعي، من غير ما يعدي على منطق
+    # الرفض بتاع الأسئلة الطبية (مفيش retrieval ولا confidence threshold هنا)
+    # ----------------------------------------------------------------
+    if safety.is_small_talk(query):
+        llm = get_llm()
+        prompt = get_small_talk_prompt()
+        final_prompt = prompt.invoke({
+            "question": query,
+            "chat_history": _build_lc_history(chat_history),
+        })
+        response = llm.invoke(final_prompt)
+        return PipelineResult(
+            answer=response.content,
+            citations=[],
+            confidence=None,
+            refused=False,
+            risk_flag=risk.risk,
+            max_retrieval_score=0.0,
         )
 
     # ----------------------------------------------------------------
@@ -96,15 +124,10 @@ def run_pipeline(
     llm = get_llm()
     prompt = get_prompt_template()
 
-    lc_history = [
-        HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"])
-        for m in chat_history
-    ]
-
     final_prompt = prompt.invoke({
         "context": context_text,
         "question": query,
-        "chat_history": lc_history,
+        "chat_history": _build_lc_history(chat_history),
     })
     response = llm.invoke(final_prompt)
     answer_text = response.content
