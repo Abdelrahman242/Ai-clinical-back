@@ -74,6 +74,53 @@ def list_documents(
 
 
 # ============================================================
+# POST /api/v1/projects/{project_id}/reindex
+# ------------------------------------------------------------
+# Queues a reset=True ingest job for every registered document in the
+# project. The work runs in background tasks so the HTTP request returns
+# quickly and the caller can poll each job through /api/v1/jobs/{job_id}.
+# ============================================================
+@router.post(
+    "/api/v1/projects/{project_id}/reindex",
+    response_model=schemas.BulkReindexResponse,
+)
+def reindex_project(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(auth.require_admin),
+):
+    get_accessible_project(db, project_id, admin)
+    documents = (
+        db.query(models.Document)
+        .filter(models.Document.project_id == project_id)
+        .order_by(models.Document.created_at)
+        .all()
+    )
+
+    jobs = []
+    for document in documents:
+        job = models.IngestJob(
+            document_id=document.id,
+            status=models.JobStatus.QUEUED,
+            current_stage="queued",
+        )
+        document.status = models.DocumentStatus.QUEUED
+        db.add(job)
+        jobs.append((job, document))
+
+    db.commit()
+    for job, document in jobs:
+        db.refresh(job)
+        background_tasks.add_task(run_ingest_job, job.id, document.id, True)
+
+    return schemas.BulkReindexResponse(
+        project_id=project_id,
+        queued_jobs=[job for job, _ in jobs],
+    )
+
+
+# ============================================================
 # POST /api/v1/documents/{document_id}/ingest
 # ============================================================
 @router.post(

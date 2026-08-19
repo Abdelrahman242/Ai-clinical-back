@@ -112,6 +112,11 @@ class JobResponse(BaseModel):
         from_attributes = True
 
 
+class BulkReindexResponse(BaseModel):
+    project_id: str
+    queued_jobs: List[JobResponse]
+
+
 # ============================================================
 # Conversations / Messages
 # ============================================================

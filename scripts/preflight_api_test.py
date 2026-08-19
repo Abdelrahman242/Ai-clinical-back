@@ -17,6 +17,7 @@ from app import models
 from app.database import Base, get_db
 from app.main import app
 from app.routers import conversations as conversations_router
+from app.routers import documents as documents_router
 from app.routers import evaluations as evaluations_router
 from app.routers import retrieve as retrieve_router
 
@@ -55,6 +56,7 @@ app.dependency_overrides[get_db] = override_get_db
 conversations_router.run_pipeline = fake_pipeline
 evaluations_router.run_pipeline = fake_pipeline
 retrieve_router.similarity_search_with_score = lambda project_id, query, k: []
+documents_router.run_ingest_job = lambda job_id, document_id, reset=False: None
 
 with TestClient(app) as client:
     first = client.post(
@@ -114,6 +116,13 @@ with TestClient(app) as client:
     assert client.get(
         f"/api/v1/documents/{document_id}/status", headers=rotated_headers
     ).status_code == 200
+
+    reindex = client.post(
+        f"/api/v1/projects/{project_id}/reindex", headers=rotated_headers
+    )
+    assert reindex.status_code == 200, reindex.text
+    assert reindex.json()["project_id"] == project_id
+    assert len(reindex.json()["queued_jobs"]) == 1
 
     retrieve = client.post(
         f"/api/v1/projects/{project_id}/retrieve",
