@@ -1,10 +1,11 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
 from ..database import get_db
+from ..core.access import get_accessible_project
 from ..core.chunking import project_sources_dir
 
 router = APIRouter(prefix="/api/v1/projects", tags=["Projects"])
@@ -37,7 +38,15 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    projects = db.query(models.Project).order_by(models.Project.created_at.desc()).all()
+    """
+    كل يوزر بيشوف مشاريعه هو بس (اللي عملها بنفسه). الأدمن وحده بيشوف كل
+    المشاريع في السيستم — عشان يقدر يدير مستنداتها.
+    """
+    query = db.query(models.Project)
+    if not current_user.is_admin:
+        query = query.filter(models.Project.created_by == current_user.id)
+
+    projects = query.order_by(models.Project.created_at.desc()).all()
     return [_to_response(p) for p in projects]
 
 
@@ -47,9 +56,7 @@ def get_project(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    project = get_accessible_project(db, project_id, current_user)
     return _to_response(project)
 
 
