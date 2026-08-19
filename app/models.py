@@ -18,6 +18,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _enum_values(enum_cls):
+    """Persist Enum.value (e.g. 'user') rather than Enum.name ('USER')."""
+    return [member.value for member in enum_cls]
+
+
 class DocumentStatus(str, enum.Enum):
     REGISTERED = "registered"   # اتسجل في السيستم بس لسه ما اتعملوش ingest
     QUEUED = "queued"
@@ -96,7 +101,13 @@ class Document(Base):
     publisher = Column(String, default="")
 
     status = Column(
-        Enum(DocumentStatus, native_enum=False, validate_strings=True, length=20),
+        Enum(
+            DocumentStatus,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=_enum_values,
+            length=20,
+        ),
         default=DocumentStatus.REGISTERED,
     )
     page_count = Column(Integer, default=0)
@@ -118,7 +129,13 @@ class IngestJob(Base):
     document_id = Column(String, ForeignKey("documents.id"), nullable=False)
 
     status = Column(
-        Enum(JobStatus, native_enum=False, validate_strings=True, length=20),
+        Enum(
+            JobStatus,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=_enum_values,
+            length=20,
+        ),
         default=JobStatus.QUEUED,
     )
     progress = Column(Integer, default=0)  # 0-100
@@ -153,7 +170,13 @@ class Message(Base):
     conversation_id = Column(String, ForeignKey("conversations.id"), nullable=False)
 
     role = Column(
-        Enum(MessageRole, native_enum=False, validate_strings=True, length=12),
+        Enum(
+            MessageRole,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=_enum_values,
+            length=12,
+        ),
         nullable=False,
     )
     content = Column(Text, nullable=False)
