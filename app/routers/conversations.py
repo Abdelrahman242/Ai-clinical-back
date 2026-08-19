@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +11,7 @@ from ..core.access import get_accessible_conversation, get_accessible_project
 from ..core.pipeline import run_pipeline
 
 router = APIRouter(tags=["Conversations"])
+logger = logging.getLogger("conversations")
 
 
 # ------------------------------------------------------------------
@@ -98,13 +100,21 @@ def post_message(
     db.add(user_msg)
     db.commit()
 
-    # 2) Run the full pipeline
-    result = run_pipeline(
-        project_id=conversation.project_id,
-        query=payload.query,
-        top_k=payload.top_k,
-        chat_history=history,
-    )
+    # 2) Run the full pipeline. Provider/model errors become a diagnosable
+    # gateway error instead of an opaque ASGI 500.
+    try:
+        result = run_pipeline(
+            project_id=conversation.project_id,
+            query=payload.query,
+            top_k=payload.top_k,
+            chat_history=history,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("LLM pipeline failed for conversation %s", conversation_id)
+        raise HTTPException(
+            status_code=502,
+            detail="خدمة الإجابة غير متاحة حاليًا. راجع إعداد LLM_PROVIDER وLLM_MODEL.",
+        ) from exc
 
     # 3) Save the assistant's answer (log) — Answer or Refusal
     citations_json = json.dumps(

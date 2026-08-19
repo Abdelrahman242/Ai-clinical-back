@@ -4,7 +4,14 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 
-from ..config import GROQ_API_KEY, LLM_MODEL, OPENAI_API_BASE, OPENAI_API_KEY
+from ..config import (
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    LLM_PROVIDER,
+    OPENAI_API_BASE,
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
+)
 
 SYSTEM_PROMPT = """
 You are a clinical evidence assistant. The retrieved guideline text is the
@@ -85,25 +92,35 @@ def get_small_talk_prompt() -> ChatPromptTemplate:
 
 @lru_cache(maxsize=1)
 def get_llm():
-    # Prefer the OpenAI-compatible gateway when configured. This is the
-    # runtime used by the deployed backend and avoids silently depending on a
-    # missing Groq-only key.
-    if OPENAI_API_KEY:
-        kwargs = {
-            "model": LLM_MODEL,
-            "api_key": OPENAI_API_KEY,
-            "temperature": 0.1,
-        }
-        if OPENAI_API_BASE:
-            kwargs["base_url"] = OPENAI_API_BASE
-        return ChatOpenAI(**kwargs)
+    """Select the provider explicitly, preserving the original Groq behavior.
 
-    if not GROQ_API_KEY:
+    ``auto`` prefers Groq when its key is present because that was the original
+    deployed behavior. OpenAI is used only when explicitly requested or when
+    no Groq key is available.
+    """
+    if LLM_PROVIDER not in {"auto", "groq", "openai"}:
+        raise RuntimeError("LLM_PROVIDER must be one of: auto, groq, openai")
+
+    use_groq = LLM_PROVIDER == "groq" or (
+        LLM_PROVIDER == "auto" and bool(GROQ_API_KEY)
+    )
+    if use_groq:
+        if not GROQ_API_KEY:
+            raise RuntimeError("LLM_PROVIDER=groq لكن GROQ_API_KEY غير مضبوط")
+        return ChatGroq(model=GROQ_MODEL, api_key=GROQ_API_KEY, temperature=0.1)
+
+    if not OPENAI_API_KEY:
         raise RuntimeError(
-            "GROQ_API_KEY مش متظبط. حط قيمته في .env (خد الـ key من "
-            "https://console.groq.com/keys) وأعد تشغيل السيرفر."
+            "لا يوجد مزود LLM صالح: اضبط GROQ_API_KEY أو OPENAI_API_KEY"
         )
-    return ChatGroq(model=LLM_MODEL, api_key=GROQ_API_KEY, temperature=0.1)
+    kwargs = {
+        "model": OPENAI_MODEL,
+        "api_key": OPENAI_API_KEY,
+        "temperature": 0.1,
+    }
+    if OPENAI_API_BASE:
+        kwargs["base_url"] = OPENAI_API_BASE
+    return ChatOpenAI(**kwargs)
 
 
 def get_prompt_template() -> ChatPromptTemplate:

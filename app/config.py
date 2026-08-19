@@ -44,8 +44,11 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM
 # ملحوظة: Groq عملوا deprecate لـ llama-3.3-70b-versatile و llama-3.1-8b-instant.
 # البديل المتاح حاليًا: openai/gpt-oss-120b (قوي) أو openai/gpt-oss-20b (أسرع/أخف).
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto").lower()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", LLM_MODEL)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
 
 # ------------------------------------------------------------------
