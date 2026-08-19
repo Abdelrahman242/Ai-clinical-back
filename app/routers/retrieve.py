@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
 from ..database import get_db
 from ..core import safety
+from ..core.access import get_accessible_project
 from ..core.vectorstore import similarity_search_with_score
 
 router = APIRouter(tags=["Retrieve (debug)"])
@@ -23,9 +24,7 @@ def debug_retrieve(
     مفيد للـ debug: بيرجع الـ chunks المسترجعة وسكورها وكل الـ metadata من غير
     ما يعدي على الـ LLM خالص — عشان تقدر تتأكد إن الـ retrieval نفسه شغال صح.
     """
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    get_accessible_project(db, project_id, current_user)
 
     results = similarity_search_with_score(project_id, payload.query, k=payload.top_k)
     max_score = max((s for _, s in results), default=0.0)
