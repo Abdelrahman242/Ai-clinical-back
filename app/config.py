@@ -87,6 +87,6 @@ OUT_OF_SCOPE_HINT_KEYWORDS = ["surgery", "pediatric dosage", "جرعة أطفا�
 AUTO_INGEST_ENABLED = os.getenv("AUTO_INGEST_ENABLED", "true").lower() in ("1", "true", "yes")
 AUTO_INGEST_INTERVAL_SECONDS = int(os.getenv("AUTO_INGEST_INTERVAL_SECONDS", "15"))
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-me")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET") or "dev-secret-change-me"
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24)))

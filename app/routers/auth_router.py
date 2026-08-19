@@ -35,7 +35,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="اسم المستخدم أو الباسورد غلط")
 
-    token = auth.create_access_token(data={"sub": user.username})
+    token = auth.create_access_token(data={"sub": str(user.id)})
     return schemas.Token(access_token=token)
 
 
@@ -44,25 +44,45 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
 
+@router.post("/logout")
+def logout(
+    token: str = Depends(auth.oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Revoke the current JWT and let the client remove its local copy."""
+    auth.revoke_token(token, current_user, db)
+    return {"status": "logged_out"}
+
+
 @router.put("/me", response_model=schemas.UserResponse)
+@router.patch("/me", response_model=schemas.UserResponse)
 def update_me(
     update: schemas.UserUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    if update.username:
+    requested_username = update.username or update.name
+    if requested_username:
         existing = (
             db.query(models.User)
-            .filter(models.User.username == update.username, models.User.id != current_user.id)
+            .filter(
+                models.User.username == requested_username,
+                models.User.id != current_user.id,
+            )
             .first()
         )
         if existing:
             raise HTTPException(status_code=400, detail="اسم المستخدم ده مستخدم بالفعل")
-        current_user.username = update.username
+        current_user.username = requested_username
 
     if update.password:
         current_user.hashed_password = auth.hash_password(update.password)
 
     db.commit()
     db.refresh(current_user)
+
+    # Return a fresh token so clients can replace any legacy username-based
+    # token immediately after a profile change.
+    current_user.access_token = auth.create_access_token(data={"sub": str(current_user.id)})
     return current_user

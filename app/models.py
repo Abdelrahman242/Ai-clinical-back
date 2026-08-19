@@ -51,6 +51,15 @@ class User(Base):
     created_at = Column(DateTime, default=_now)
 
 
+class RevokedToken(Base):
+    __tablename__ = "revoked_tokens"
+
+    jti = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+
+
 class Project(Base):
     """
     مشروع = نطاق سريري واحد (مثلا Adult Hypertension Management)، زي ما مطلوب في

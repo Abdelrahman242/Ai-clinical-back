@@ -19,6 +19,8 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     is_admin: bool
+    # Returned only after profile updates so clients can rotate legacy tokens.
+    access_token: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -31,6 +33,8 @@ class Token(BaseModel):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
+    # Accept name as a compatibility alias used by some profile UIs.
+    name: Optional[str] = None
     password: Optional[str] = Field(default=None, min_length=6)
 
 
