@@ -27,3 +27,4 @@ pymupdf
 
 # Config
 python-dotenv
+psycopg[binary]

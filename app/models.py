@@ -86,7 +86,10 @@ class Document(Base):
     source_url = Column(String, nullable=True)
     publisher = Column(String, default="")
 
-    status = Column(Enum(DocumentStatus), default=DocumentStatus.REGISTERED)
+    status = Column(
+        Enum(DocumentStatus, native_enum=False, validate_strings=True, length=20),
+        default=DocumentStatus.REGISTERED,
+    )
     page_count = Column(Integer, default=0)
     chunks_indexed = Column(Integer, default=0)
     error = Column(Text, default="")
@@ -105,7 +108,10 @@ class IngestJob(Base):
     id = Column(String, primary_key=True, default=_uuid)
     document_id = Column(String, ForeignKey("documents.id"), nullable=False)
 
-    status = Column(Enum(JobStatus), default=JobStatus.QUEUED)
+    status = Column(
+        Enum(JobStatus, native_enum=False, validate_strings=True, length=20),
+        default=JobStatus.QUEUED,
+    )
     progress = Column(Integer, default=0)  # 0-100
     current_stage = Column(String, default="queued")
     chunks_indexed = Column(Integer, default=0)
@@ -137,7 +143,10 @@ class Message(Base):
     id = Column(String, primary_key=True, default=_uuid)
     conversation_id = Column(String, ForeignKey("conversations.id"), nullable=False)
 
-    role = Column(Enum(MessageRole), nullable=False)
+    role = Column(
+        Enum(MessageRole, native_enum=False, validate_strings=True, length=12),
+        nullable=False,
+    )
     content = Column(Text, nullable=False)
 
     # للردود بس (assistant)

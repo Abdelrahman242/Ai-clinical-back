@@ -30,7 +30,12 @@ SYSTEM_SOURCES_DIR.mkdir(parents=True, exist_ok=True)
 VECTORSTORE_ROOT = Path(os.getenv("VECTORSTORE_ROOT", BASE_DIR / "data" / "vectorstores"))
 VECTORSTORE_ROOT.mkdir(parents=True, exist_ok=True)
 
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'clinical_rag.db'}")
+# Production should set SUPABASE_DB_URL to the Supabase Session Pooler URL.
+# DATABASE_URL remains supported for backwards compatibility and local SQLite
+# remains a development fallback only.
+DATABASE_URL = os.getenv("SUPABASE_DB_URL") or os.getenv(
+    "DATABASE_URL", f"sqlite:///{BASE_DIR / 'clinical_rag.db'}"
+)
 
 # ------------------------------------------------------------------
 # Embeddings / LLM

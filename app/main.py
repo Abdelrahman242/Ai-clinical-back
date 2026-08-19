@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.auto_ingest import start_background_scanner
-from .database import Base, engine
 from .routers import (
     auth_router,
     conversations,
@@ -13,7 +12,6 @@ from .routers import (
     retrieve,
 )
 
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Clinical RAG Copilot API",

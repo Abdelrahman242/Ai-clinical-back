@@ -147,3 +147,17 @@ python scripts/seed_hypertension_sources.py <PROJECT_ID>
 المحادثات أصبحت معزولة حسب `user_id`: قائمة المحادثات، قراءة الرسائل، وإرسال رسالة جديدة لا تعمل إلا إذا كانت المحادثة مملوكة للمستخدم المصادق عليه. عند محاولة الوصول إلى محادثة مستخدم آخر يرجع الـAPI حالة `404` عمدًا حتى لا يكشف وجود المعرّف. سجلات المحادثات القديمة التي لا تحتوي `user_id` لا تُعرض تلقائيًا لأي مستخدم.
 
 يدعم الخادم الآن مزود OpenAI-compatible عبر `OPENAI_API_KEY` و`OPENAI_API_BASE`، مع إبقاء `GROQ_API_KEY` كخيار بديل. إذا تعطل مزود النموذج، يرجع الشات رسالة خطأ مفهومة بدل انتهاء الطلب بلا رد. كما أضيف توسيع ثنائي اللغة لاستعلامات ضغط الدم حتى تتطابق الأسئلة العربية مع نصوص الإرشادات الإنجليزية.
+
+## Supabase Database
+
+تم نقل قاعدة البيانات إلى Supabase Postgres من خلال migration موجود في `supabase/migrations/20260820_initial_clinical_schema.sql`. التطبيق يستخدم SQLAlchemy كطبقة ORM، لكن الاتصال الفعلي في بيئة الإنتاج يكون عبر `SUPABASE_DB_URL` إلى Supabase Session Pooler. تم إيقاف `Base.metadata.create_all` من startup حتى لا ينشئ التطبيق schema خارج نظام migrations.
+
+جدول `users` هو جدول الحسابات الأساسي، وكل `projects` يرتبط بصاحبه عبر `created_by`، وكل `conversations` و`messages` يرتبطان بالمستخدم والمشروع، بينما ترتبط `documents` و`ingest_jobs` بالمشروع والمستند. توجد مفاتيح أجنبية وفهارس على علاقات الملكية، مع تفعيل RLS لمنع الوصول المباشر العام إلى الجداول. عزل المحادثات عبر الـAPI يظل مفروضًا كذلك في طبقة التطبيق.
+
+للتشغيل في Railway أو أي بيئة نشر، أضف متغير `SUPABASE_DB_URL` باستخدام **Session Pooler connection string** من Supabase Dashboard → Connect، مع `sslmode=require`. بعد ذلك شغّل:
+
+```bash
+pip install -r requirements.txt
+```
+
+ثم أعد تشغيل الخدمة. الـmigration تم تطبيقه بالفعل على مشروع Supabase المتصل، ولا توجد حاجة لإنشاء جداول يدويًا من لوحة التحكم.
