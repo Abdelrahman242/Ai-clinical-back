@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
 from ..database import get_db
+from ..core.access import get_accessible_conversation, get_accessible_project
 from ..core.pipeline import run_pipeline
 
 router = APIRouter(tags=["Conversations"])
@@ -25,9 +26,7 @@ def create_conversation(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    get_accessible_project(db, project_id, current_user)
 
     conversation = models.Conversation(
         project_id=project_id, user_id=current_user.id, title=payload.title
@@ -47,6 +46,8 @@ def list_conversations(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    get_accessible_project(db, project_id, current_user)
+
     return (
         db.query(models.Conversation)
         .filter(models.Conversation.project_id == project_id)
@@ -72,13 +73,7 @@ def post_message(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    conversation = (
-        db.query(models.Conversation)
-        .filter(models.Conversation.id == conversation_id)
-        .first()
-    )
-    if not conversation:
-        raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
+    conversation = get_accessible_conversation(db, conversation_id, current_user)
 
     # آخر 10 رسايل عشان الـ context history
     past = (
@@ -138,6 +133,8 @@ def get_messages(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    get_accessible_conversation(db, conversation_id, current_user)
+
     messages = (
         db.query(models.Message)
         .filter(models.Message.conversation_id == conversation_id)
