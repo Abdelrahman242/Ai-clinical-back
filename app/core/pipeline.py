@@ -3,12 +3,12 @@ app/core/pipeline.py
 
 Flow:
 User
- -> Safety
- -> Retrieve closest documents
- -> Use retrieved documents as context
- -> LLM answers from closest available source context
- -> Validate answer
- -> Return answer + citations
+  -> Safety / Risk Classification
+  -> Retrieve relevant clinical documents
+  -> Decide whether retrieved evidence is sufficient
+  -> Generate answer using retrieved evidence
+  -> Validate answer against retrieved evidence
+  -> Return answer + citations
 """
 
 from dataclasses import dataclass, field
@@ -21,7 +21,7 @@ from .llm import get_llm, get_prompt_template, get_small_talk_prompt
 from .vectorstore import similarity_search_with_score
 
 
-GENERAL_KNOWLEDGE_FALLBACK_LABEL = "Source Retrieved"
+GENERAL_KNOWLEDGE_FALLBACK_LABEL = "General Knowledge"
 
 
 @dataclass
@@ -53,6 +53,15 @@ def _build_lc_history(chat_history: list):
 
 
 def _build_citations(retrieved) -> List[PipelineCitation]:
+    """
+    Build citations from every document returned by the vectorstore.
+
+    Important:
+    A citation means that the document was retrieved.
+    It does NOT automatically mean that the final answer was fully
+    supported by that document.
+    """
+
     return [
         PipelineCitation(
             document=doc.metadata.get(
@@ -78,7 +87,7 @@ def run_pipeline(
     chat_history = chat_history or []
 
     # ================================================================
-    # 1) SAFETY
+    # 1) INPUT RISK CLASSIFICATION
     # ================================================================
 
     risk = safety.classify_input_risk(query)
@@ -95,7 +104,7 @@ def run_pipeline(
         )
 
     # ================================================================
-    # 2) SMALL TALK
+    # 1.5) SMALL TALK
     # ================================================================
 
     if safety.is_small_talk(query):
@@ -122,7 +131,7 @@ def run_pipeline(
         )
 
     # ================================================================
-    # 3) RETRIEVE CLOSEST DOCUMENTS
+    # 2) RETRIEVE CLINICAL CONTEXT
     # ================================================================
 
     retrieved = similarity_search_with_score(
@@ -169,43 +178,42 @@ def run_pipeline(
     print("=====================================\n")
 
     # ================================================================
-    # 4) NO DOCUMENTS AT ALL
-    # ================================================================
-
-    if not retrieved:
-
-        return PipelineResult(
-            answer=(
-                "لا توجد مستندات متاحة في قاعدة المعرفة لهذا المشروع."
-            ),
-            citations=[],
-            confidence=safety.CONFIDENCE_INSUFFICIENT,
-            refused=False,
-            risk_flag=risk.risk,
-            max_retrieval_score=0.0,
-        )
-
-    # ================================================================
-    # 5) CITATIONS
+    # 3) BUILD CITATIONS
+    #
+    # Citations are ALWAYS built from retrieved documents.
+    # They are NOT dependent on the confidence threshold.
     # ================================================================
 
     citations = _build_citations(retrieved)
 
     # ================================================================
-    # 6) USE THE CLOSEST RETRIEVED CONTEXT
-    #
-    # IMPORTANT:
-    # We intentionally do NOT reject context because of the score.
-    # If FAISS retrieved documents, we use them.
+    # 4) DETERMINE WHETHER EVIDENCE IS STRONG ENOUGH
     # ================================================================
 
-    context_text = "\n\n".join(
-        doc.page_content
-        for doc, _ in retrieved
+    has_useful_context = (
+        bool(retrieved)
+        and confidence != safety.CONFIDENCE_INSUFFICIENT
     )
 
     # ================================================================
-    # 7) GENERATION
+    # 5) BUILD CONTEXT FOR LLM
+    # ================================================================
+
+    if has_useful_context:
+
+        context_text = "\n\n".join(
+            doc.page_content
+            for doc, _ in retrieved
+        )
+
+    else:
+
+        context_text = (
+            "لا يوجد سياق طبي مسترجع بدرجة كافية من المصادر المسجلة."
+        )
+
+    # ================================================================
+    # 6) GENERATION
     # ================================================================
 
     llm = get_llm()
@@ -224,7 +232,22 @@ def run_pipeline(
     answer_text = response.content
 
     # ================================================================
-    # 8) VALIDATION
+    # 7) FALLBACK
+    # ================================================================
+
+    if not has_useful_context:
+
+        return PipelineResult(
+            answer=answer_text,
+            citations=citations,
+            confidence=GENERAL_KNOWLEDGE_FALLBACK_LABEL,
+            refused=False,
+            risk_flag=risk.risk,
+            max_retrieval_score=max_score,
+        )
+
+    # ================================================================
+    # 8) VALIDATE ANSWER AGAINST RETRIEVED EVIDENCE
     # ================================================================
 
     retrieved_texts = [
@@ -241,14 +264,10 @@ def run_pipeline(
 
         confidence = safety.CONFIDENCE_LOW
 
-        # IMPORTANT:
-        # Don't throw away the answer completely.
-        # Keep the answer but clearly indicate that some parts
-        # may not be fully supported by the retrieved chunks.
-
         answer_text += (
-            "\n\n⚠️ بعض تفاصيل الإجابة قد لا تكون مدعومة "
-            "بشكل كامل بالمقاطع المسترجعة."
+            "\n\n⚠️ تنبيه: بعض المعلومات في الإجابة "
+            "قد لا تكون مدعومة بالكامل بالنص المسترجع. "
+            "يرجى مراجعة المصادر المذكورة."
         )
 
     # ================================================================
