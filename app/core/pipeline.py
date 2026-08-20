@@ -101,22 +101,30 @@ def run_pipeline(
     max_score = max((score for _, score in retrieved), default=0.0)
     confidence = safety.confidence_from_score(max_score)
 
-    has_useful_context = confidence != safety.CONFIDENCE_INSUFFICIENT and bool(retrieved)
-    context_text = "\n\n".join(doc.page_content for doc, _ in retrieved) if has_useful_context else ""
+    has_useful_context = (
+    confidence != safety.CONFIDENCE_INSUFFICIENT
+    and bool(retrieved))
+
+    context_text = (
+    "\n\n".join(doc.page_content for doc, _ in retrieved)
+    if has_useful_context
+    else "")
 
     # بنبني الـ citations من أي مستندات اتسترجعت، بغض النظر عن الـ threshold
     # بتاع has_useful_context — عشان المستخدم يشوف المصادر القريبة حتى لو
     # الموديل جاوب من معرفته العامة بدل ما يعتمد عليها في الـ prompt.
     citations = [
-        PipelineCitation(
-            document=doc.metadata.get("document_name", doc.metadata.get("source", "unknown")),
-            section=doc.metadata.get("section_title"),
-            page=doc.metadata.get("page_number"),
-            chunk_id=doc.metadata.get("chunk_id"),
-            score=round(score, 4),
-        )
-        for doc, score in retrieved
-    ]
+    PipelineCitation(
+        document=doc.metadata.get(
+            "document_name",
+            doc.metadata.get("source", "unknown")
+        ),
+        section=doc.metadata.get("section_title"),
+        page=doc.metadata.get("page_number"),
+        chunk_id=doc.metadata.get("chunk_id"),
+        score=round(score, 4),
+    )
+    for doc, score in retrieved]
 
     # ----------------------------------------------------------------
     # 3) Generation
