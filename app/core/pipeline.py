@@ -60,8 +60,7 @@ def run_pipeline(
     chat_history = chat_history or []
 
     # ----------------------------------------------------------------
-    # 1) Input Risk Classification — الحاجة الوحيدة اللي لسه بترفض:
-    # حالات الطوارئ الفعلية أو سؤال خارج نطاق النظام تمامًا.
+    # 1) Input Risk Classification
     # ----------------------------------------------------------------
     risk = safety.classify_input_risk(query)
     if risk.risk == safety.RISK_REFUSE:
@@ -76,7 +75,7 @@ def run_pipeline(
         )
 
     # ----------------------------------------------------------------
-    # 1.5) كلام عابر/تحية — رد طبيعي بدون RAG خالص
+    # 1.5) كلام عابر/تحية
     # ----------------------------------------------------------------
     if safety.is_small_talk(query):
         llm = get_llm()
@@ -105,11 +104,22 @@ def run_pipeline(
     has_useful_context = confidence != safety.CONFIDENCE_INSUFFICIENT and bool(retrieved)
     context_text = "\n\n".join(doc.page_content for doc, _ in retrieved) if has_useful_context else ""
 
+    # بنبني الـ citations من أي مستندات اتسترجعت، بغض النظر عن الـ threshold
+    # بتاع has_useful_context — عشان المستخدم يشوف المصادر القريبة حتى لو
+    # الموديل جاوب من معرفته العامة بدل ما يعتمد عليها في الـ prompt.
+    citations = [
+        PipelineCitation(
+            document=doc.metadata.get("document_name", doc.metadata.get("source", "unknown")),
+            section=doc.metadata.get("section_title"),
+            page=doc.metadata.get("page_number"),
+            chunk_id=doc.metadata.get("chunk_id"),
+            score=round(score, 4),
+        )
+        for doc, score in retrieved
+    ]
+
     # ----------------------------------------------------------------
-    # 3) Generation — مبني على الدليل لو موجود ومناسب، وإلا يجاوب من
-    # معرفته العامة بدل ما يرفض (بناءً على طلب صريح إن النظام يرد على
-    # كل الأسئلة الطبية). الإجابة بترجع زي ما هي من غير أي ملحوظة تتلصق
-    # في آخرها بخصوص مصدر المعلومة.
+    # 3) Generation
     # ----------------------------------------------------------------
     llm = get_llm()
     prompt = get_prompt_template()
@@ -123,12 +133,9 @@ def run_pipeline(
     answer_text = response.content
 
     if not has_useful_context:
-        # مفيش دليل رسمي كافي — الإجابة من المعرفة العامة، من غير أي
-        # ملحوظة تتلصق في نص الإجابة. الـ confidence label تحت (metadata)
-        # كافي لتمييز مصدر الإجابة لو حبيت تستخدمه في الـ frontend لاحقًا.
         return PipelineResult(
             answer=answer_text,
-            citations=[],
+            citations=citations,
             confidence=GENERAL_KNOWLEDGE_FALLBACK_LABEL,
             refused=False,
             risk_flag=risk.risk,
@@ -136,8 +143,7 @@ def run_pipeline(
         )
 
     # ----------------------------------------------------------------
-    # 4) Validate Answer / Citations (unsupported claim detection) —
-    # بس للإجابات المبنية فعلاً على سياق من الدليل
+    # 4) Validate Answer / Citations (unsupported claim detection)
     # ----------------------------------------------------------------
     retrieved_texts = [doc.page_content for doc, _ in retrieved]
     unsupported = safety.unsupported_claims(answer_text, retrieved_texts)
@@ -147,17 +153,6 @@ def run_pipeline(
             "\n\n⚠️ تنبيه: جزء من الإجابة دي مش متأكدين إنه مدعوم بالكامل بالنص "
             "المسترجع من الدليل الرسمي — راجع المصادر تحت قبل ما تعتمد عليها."
         )
-
-    citations = [
-        PipelineCitation(
-            document=doc.metadata.get("document_name", doc.metadata.get("source", "unknown")),
-            section=doc.metadata.get("section_title"),
-            page=doc.metadata.get("page_number"),
-            chunk_id=doc.metadata.get("chunk_id"),
-            score=round(score, 4),
-        )
-        for doc, score in retrieved
-    ]
 
     return PipelineResult(
         answer=answer_text,
