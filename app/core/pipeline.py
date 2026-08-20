@@ -3,13 +3,13 @@ app/core/pipeline.py
 ----------------------
 Flow:
 User -> Frontend -> Backend API
-     -> Validate/Auth        (بيحصل في الـ router عن طريق auth.get_current_user)
-     -> Retrieve Context     (vectorstore.similarity_search_with_score)
-     -> Safety Check         (بس حالات الطوارئ/خارج النطاق بترفض — مش نقص الأدلة)
-     -> Generation Model     (مبني على الدليل لو موجود، وإلا من المعرفة العامة)
-     -> Validate Citations   (safety.unsupported_claims — للإجابات المبنية على دليل بس)
+     -> Validate/Auth
+     -> Retrieve Context
+     -> Safety Check
+     -> Generation Model
+     -> Validate Citations
      -> Save Logs
-     -> Return Answer or Refusal (رفض بس لحالات الطوارئ الحقيقية)
+     -> Return Answer or Refusal
 """
 
 from dataclasses import dataclass, field
@@ -21,7 +21,9 @@ from . import safety
 from .llm import get_llm, get_prompt_template, get_small_talk_prompt
 from .vectorstore import similarity_search_with_score
 
-# لو أعلى score أقل من كده، بنعتبر إن مفيش سياق مفيد ونروح على المعرفة العامة
+
+# لو أعلى score أقل من threshold،
+# بنعتبر إن مفيش سياق مفيد ونروح للـ General Knowledge
 GENERAL_KNOWLEDGE_FALLBACK_LABEL = "General Knowledge"
 
 
@@ -46,7 +48,9 @@ class PipelineResult:
 
 def _build_lc_history(chat_history: list):
     return [
-        HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"])
+        HumanMessage(content=m["content"])
+        if m["role"] == "user"
+        else AIMessage(content=m["content"])
         for m in chat_history
     ]
 
@@ -57,12 +61,15 @@ def run_pipeline(
     top_k: int = 5,
     chat_history: Optional[list] = None,
 ) -> PipelineResult:
+
     chat_history = chat_history or []
 
     # ----------------------------------------------------------------
     # 1) Input Risk Classification
     # ----------------------------------------------------------------
+
     risk = safety.classify_input_risk(query)
+
     if risk.risk == safety.RISK_REFUSE:
         return PipelineResult(
             answer=(
@@ -75,16 +82,23 @@ def run_pipeline(
         )
 
     # ----------------------------------------------------------------
-    # 1.5) كلام عابر/تحية
+    # 1.5) Small Talk / Greetings
     # ----------------------------------------------------------------
+
     if safety.is_small_talk(query):
+
         llm = get_llm()
         prompt = get_small_talk_prompt()
-        final_prompt = prompt.invoke({
-            "question": query,
-            "chat_history": _build_lc_history(chat_history),
-        })
+
+        final_prompt = prompt.invoke(
+            {
+                "question": query,
+                "chat_history": _build_lc_history(chat_history),
+            }
+        )
+
         response = llm.invoke(final_prompt)
+
         return PipelineResult(
             answer=response.content,
             citations=[],
@@ -97,50 +111,125 @@ def run_pipeline(
     # ----------------------------------------------------------------
     # 2) Retrieve Context
     # ----------------------------------------------------------------
-    retrieved = similarity_search_with_score(project_id, query, k=top_k)
-    max_score = max((score for _, score in retrieved), default=0.0)
+
+    retrieved = similarity_search_with_score(
+        project_id,
+        query,
+        k=top_k,
+    )
+
+    # ----------------------------------------------------------------
+    # DEBUG
+    # ----------------------------------------------------------------
+
+    print("\n========== RETRIEVAL DEBUG ==========")
+    print("Project ID:", project_id)
+    print("Query:", query)
+    print("Retrieved count:", len(retrieved))
+
+    for doc, score in retrieved:
+        print(
+            "Document:",
+            doc.metadata.get(
+                "document_name",
+                doc.metadata.get("source", "unknown"),
+            ),
+            "| Score:",
+            score,
+            "| Page:",
+            doc.metadata.get("page_number"),
+            "| Section:",
+            doc.metadata.get("section_title"),
+            "| Chunk:",
+            doc.metadata.get("chunk_id"),
+        )
+
+    print("=====================================\n")
+
+    # ----------------------------------------------------------------
+    # Calculate retrieval score / confidence
+    # ----------------------------------------------------------------
+
+    max_score = max(
+        (score for _, score in retrieved),
+        default=0.0,
+    )
+
     confidence = safety.confidence_from_score(max_score)
 
+    # ----------------------------------------------------------------
+    # Determine whether retrieved context is useful enough
+    # ----------------------------------------------------------------
+
     has_useful_context = (
-    confidence != safety.CONFIDENCE_INSUFFICIENT
-    and bool(retrieved))
+        confidence != safety.CONFIDENCE_INSUFFICIENT
+        and bool(retrieved)
+    )
+
+    # ----------------------------------------------------------------
+    # Build context ONLY if retrieval is useful
+    # ----------------------------------------------------------------
 
     context_text = (
-    "\n\n".join(doc.page_content for doc, _ in retrieved)
-    if has_useful_context
-    else "")
-
-    # بنبني الـ citations من أي مستندات اتسترجعت، بغض النظر عن الـ threshold
-    # بتاع has_useful_context — عشان المستخدم يشوف المصادر القريبة حتى لو
-    # الموديل جاوب من معرفته العامة بدل ما يعتمد عليها في الـ prompt.
-    citations = [
-    PipelineCitation(
-        document=doc.metadata.get(
-            "document_name",
-            doc.metadata.get("source", "unknown")
-        ),
-        section=doc.metadata.get("section_title"),
-        page=doc.metadata.get("page_number"),
-        chunk_id=doc.metadata.get("chunk_id"),
-        score=round(score, 4),
+        "\n\n".join(
+            doc.page_content
+            for doc, _ in retrieved
+        )
+        if has_useful_context
+        else ""
     )
-    for doc, score in retrieved]
+
+    # ----------------------------------------------------------------
+    # Build citations from ALL retrieved documents
+    #
+    # IMPORTANT:
+    # Citations are returned even if the retrieval score is below
+    # the useful-context threshold.
+    # ----------------------------------------------------------------
+
+    citations = [
+        PipelineCitation(
+            document=doc.metadata.get(
+                "document_name",
+                doc.metadata.get("source", "unknown"),
+            ),
+            section=doc.metadata.get("section_title"),
+            page=doc.metadata.get("page_number"),
+            chunk_id=doc.metadata.get("chunk_id"),
+            score=round(score, 4),
+        )
+        for doc, score in retrieved
+    ]
 
     # ----------------------------------------------------------------
     # 3) Generation
     # ----------------------------------------------------------------
+
     llm = get_llm()
     prompt = get_prompt_template()
 
-    final_prompt = prompt.invoke({
-        "context": context_text if has_useful_context else "(لا يوجد سياق ذي صلة من المستندات المسجلة)",
-        "question": query,
-        "chat_history": _build_lc_history(chat_history),
-    })
+    final_prompt = prompt.invoke(
+        {
+            "context": (
+                context_text
+                if has_useful_context
+                else "(لا يوجد سياق ذي صلة من المستندات المسجلة)"
+            ),
+            "question": query,
+            "chat_history": _build_lc_history(chat_history),
+        }
+    )
+
     response = llm.invoke(final_prompt)
+
     answer_text = response.content
 
+    # ----------------------------------------------------------------
+    # 3.5) General Knowledge Fallback
+    # ----------------------------------------------------------------
+
     if not has_useful_context:
+
         return PipelineResult(
             answer=answer_text,
             citations=citations,
@@ -151,16 +240,32 @@ def run_pipeline(
         )
 
     # ----------------------------------------------------------------
-    # 4) Validate Answer / Citations (unsupported claim detection)
+    # 4) Validate Answer / Unsupported Claims
     # ----------------------------------------------------------------
-    retrieved_texts = [doc.page_content for doc, _ in retrieved]
-    unsupported = safety.unsupported_claims(answer_text, retrieved_texts)
+
+    retrieved_texts = [
+        doc.page_content
+        for doc, _ in retrieved
+    ]
+
+    unsupported = safety.unsupported_claims(
+        answer_text,
+        retrieved_texts,
+    )
+
     if unsupported:
+
         confidence = safety.CONFIDENCE_LOW
+
         answer_text += (
-            "\n\n⚠️ تنبيه: جزء من الإجابة دي مش متأكدين إنه مدعوم بالكامل بالنص "
-            "المسترجع من الدليل الرسمي — راجع المصادر تحت قبل ما تعتمد عليها."
+            "\n\n⚠️ تنبيه: جزء من الإجابة دي مش متأكدين "
+            "إنه مدعوم بالكامل بالنص المسترجع من الدليل الرسمي "
+            "— راجع المصادر تحت قبل ما تعتمد عليها."
         )
+
+    # ----------------------------------------------------------------
+    # 5) Final Result
+    # ----------------------------------------------------------------
 
     return PipelineResult(
         answer=answer_text,
