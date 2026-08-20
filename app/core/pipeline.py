@@ -21,6 +21,7 @@ from . import safety
 from .llm import get_llm, get_prompt_template, get_small_talk_prompt
 from .vectorstore import similarity_search_with_score
 
+# لو أعلى score أقل من كده، بنعتبر إن مفيش سياق مفيد ونروح على المعرفة العامة
 GENERAL_KNOWLEDGE_FALLBACK_LABEL = "General Knowledge"
 
 
@@ -104,21 +105,11 @@ def run_pipeline(
     has_useful_context = confidence != safety.CONFIDENCE_INSUFFICIENT and bool(retrieved)
     context_text = "\n\n".join(doc.page_content for doc, _ in retrieved) if has_useful_context else ""
 
-    # بنبني الـ citations من أي مستندات اتسترجعت، بغض النظر عن الـ threshold
-    citations = [
-        PipelineCitation(
-            document=doc.metadata.get("document_name", doc.metadata.get("source", "unknown")),
-            section=doc.metadata.get("section_title"),
-            page=doc.metadata.get("page_number"),
-            chunk_id=doc.metadata.get("chunk_id"),
-            score=round(score, 4),
-        )
-        for doc, score in retrieved
-    ]
-
     # ----------------------------------------------------------------
-    # 3) Generation — مبني على الدليل لو موجود ومناسب، وإلا من المعرفة
-    # العامة. مفيش أي رفض هنا خالص، ومفيش أي ملحوظة تتلصق في الإجابة.
+    # 3) Generation — مبني على الدليل لو موجود ومناسب، وإلا يجاوب من
+    # معرفته العامة بدل ما يرفض (بناءً على طلب صريح إن النظام يرد على
+    # كل الأسئلة الطبية). الإجابة بترجع زي ما هي من غير أي ملحوظة تتلصق
+    # في آخرها بخصوص مصدر المعلومة.
     # ----------------------------------------------------------------
     llm = get_llm()
     prompt = get_prompt_template()
@@ -132,9 +123,12 @@ def run_pipeline(
     answer_text = response.content
 
     if not has_useful_context:
+        # مفيش دليل رسمي كافي — الإجابة من المعرفة العامة، من غير أي
+        # ملحوظة تتلصق في نص الإجابة. الـ confidence label تحت (metadata)
+        # كافي لتمييز مصدر الإجابة لو حبيت تستخدمه في الـ frontend لاحقًا.
         return PipelineResult(
             answer=answer_text,
-            citations=citations,
+            citations=[],
             confidence=GENERAL_KNOWLEDGE_FALLBACK_LABEL,
             refused=False,
             risk_flag=risk.risk,
@@ -153,6 +147,17 @@ def run_pipeline(
             "\n\n⚠️ تنبيه: جزء من الإجابة دي مش متأكدين إنه مدعوم بالكامل بالنص "
             "المسترجع من الدليل الرسمي — راجع المصادر تحت قبل ما تعتمد عليها."
         )
+
+    citations = [
+        PipelineCitation(
+            document=doc.metadata.get("document_name", doc.metadata.get("source", "unknown")),
+            section=doc.metadata.get("section_title"),
+            page=doc.metadata.get("page_number"),
+            chunk_id=doc.metadata.get("chunk_id"),
+            score=round(score, 4),
+        )
+        for doc, score in retrieved
+    ]
 
     return PipelineResult(
         answer=answer_text,
