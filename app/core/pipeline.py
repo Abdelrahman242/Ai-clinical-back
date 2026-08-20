@@ -1,16 +1,15 @@
 """
 app/core/pipeline.py
 ----------------------
-بيطبق نفس الـ flow اللي في الأجندة:
-
+Flow:
 User -> Frontend -> Backend API
      -> Validate/Auth        (بيحصل في الـ router عن طريق auth.get_current_user)
      -> Retrieve Context     (vectorstore.similarity_search_with_score)
-     -> Safety Threshold     (safety.classify_input_risk + safety.confidence_from_score)
-     -> Generation Model     (llm.get_llm)
-     -> Validate Answer/Citations (safety.unsupported_claims)
-     -> Save Logs            (بيرجع للـ router يخزنه كـ Message)
-     -> Return Answer or Refusal
+     -> Safety Check         (بس حالات الطوارئ/خارج النطاق بترفض — مش نقص الأدلة)
+     -> Generation Model     (مبني على الدليل لو موجود، وإلا من المعرفة العامة)
+     -> Validate Citations   (safety.unsupported_claims — للإجابات المبنية على دليل بس)
+     -> Save Logs
+     -> Return Answer or Refusal (رفض بس لحالات الطوارئ الحقيقية)
 """
 
 from dataclasses import dataclass, field
@@ -20,8 +19,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from . import safety
 from .llm import get_llm, get_prompt_template, get_small_talk_prompt
-from ..config import ENABLE_QUERY_EXPANSION
 from .vectorstore import similarity_search_with_score
+
+# لو أعلى score أقل من كده، بنعتبر إن مفيش سياق مفيد ونروح على المعرفة العامة
+GENERAL_KNOWLEDGE_FALLBACK_LABEL = "General Knowledge"
 
 
 @dataclass
@@ -59,7 +60,8 @@ def run_pipeline(
     chat_history = chat_history or []
 
     # ----------------------------------------------------------------
-    # 1) Input Risk Classification
+    # 1) Input Risk Classification — الحاجة الوحيدة اللي لسه بترفض:
+    # حالات الطوارئ الفعلية أو سؤال خارج نطاق النظام تمامًا.
     # ----------------------------------------------------------------
     risk = safety.classify_input_risk(query)
     if risk.risk == safety.RISK_REFUSE:
@@ -74,8 +76,7 @@ def run_pipeline(
         )
 
     # ----------------------------------------------------------------
-    # 1.5) كلام عابر/تحية — يرد بشكل طبيعي، من غير ما يعدي على منطق
-    # الرفض بتاع الأسئلة الطبية (مفيش retrieval ولا confidence threshold هنا)
+    # 1.5) كلام عابر/تحية — رد طبيعي بدون RAG خالص
     # ----------------------------------------------------------------
     if safety.is_small_talk(query):
         llm = get_llm()
@@ -97,85 +98,52 @@ def run_pipeline(
     # ----------------------------------------------------------------
     # 2) Retrieve Context
     # ----------------------------------------------------------------
-    retrieval_query = _expand_hypertension_query(query) if ENABLE_QUERY_EXPANSION else query
-    try:
-        retrieved = similarity_search_with_score(project_id, retrieval_query, k=top_k)
-    except Exception:  # noqa: BLE001
-        return PipelineResult(
-            answer=(
-                "حصلت مشكلة في قراءة فهرس المصادر. تأكد أن مصادر ضغط الدم تم تحميلها "
-                "وعمل ingest لها على نفس المشروع، ثم أعد المحاولة."
-            ),
-            refused=True,
-            risk_flag=risk.risk,
-            confidence=safety.CONFIDENCE_INSUFFICIENT,
-        )
+    retrieved = similarity_search_with_score(project_id, query, k=top_k)
     max_score = max((score for _, score in retrieved), default=0.0)
-
-    # ----------------------------------------------------------------
-    # 3) Safety / Retrieval Confidence Threshold
-    # ----------------------------------------------------------------
     confidence = safety.confidence_from_score(max_score)
-    if confidence == safety.CONFIDENCE_INSUFFICIENT:
-        return PipelineResult(
-            answer=(
-                "معنديش أدلة كافية من المستندات الرسمية المسجلة في المشروع ده "
-                "عشان أجاوب على السؤال بثقة. من فضلك أعد صياغة السؤال أو تأكد إن "
-                "الدليل المناسب اتسجل واتعمله ingest."
-            ),
-            refused=True,
-            risk_flag=risk.risk,
-            confidence=confidence,
-            max_retrieval_score=max_score,
-        )
 
-    context_text = "\n\n".join(doc.page_content for doc, _ in retrieved)
+    has_useful_context = confidence != safety.CONFIDENCE_INSUFFICIENT and bool(retrieved)
+    context_text = "\n\n".join(doc.page_content for doc, _ in retrieved) if has_useful_context else ""
 
     # ----------------------------------------------------------------
-    # 4) Grounded Generation
+    # 3) Generation — مبني على الدليل لو موجود ومناسب، وإلا يجاوب من
+    # معرفته العامة بدل ما يرفض (بناءً على طلب صريح إن النظام يرد على
+    # كل الأسئلة الطبية). بنوضح دايمًا للمستخدم مصدر الإجابة.
     # ----------------------------------------------------------------
-    try:
-        llm = get_llm()
-        prompt = get_prompt_template()
-    except Exception:  # noqa: BLE001
-        return PipelineResult(
-            answer=(
-                "حصلت مشكلة في تشغيل نموذج الإجابة. تأكد من ضبط إعدادات مزود "
-                "النموذج على الخادم ثم أعد المحاولة."
-            ),
-            refused=True,
-            risk_flag=risk.risk,
-            confidence=safety.CONFIDENCE_LOW,
-            max_retrieval_score=max_score,
-        )
+    llm = get_llm()
+    prompt = get_prompt_template()
 
     final_prompt = prompt.invoke({
-        "context": context_text,
+        "context": context_text if has_useful_context else "(لا يوجد سياق ذي صلة من المستندات المسجلة)",
         "question": query,
         "chat_history": _build_lc_history(chat_history),
     })
-    try:
-        response = llm.invoke(final_prompt)
-        answer_text = response.content
-    except Exception:  # noqa: BLE001
+    response = llm.invoke(final_prompt)
+    answer_text = response.content
+
+    if not has_useful_context:
+        # مفيش دليل رسمي كافي — الإجابة من المعرفة العامة، ولازم يبقى واضح
+        answer_text += (
+            "\n\nℹ️ ملحوظة: الإجابة دي من معرفة عامة، مش من مستندات المشروع "
+            "الرسمية المسجلة — لو محتاج إجابة موثقة من دليل رسمي، تأكد إن الدليل "
+            "المناسب اتسجل واتعمله ingest في المشروع ده."
+        )
         return PipelineResult(
-            answer=(
-                "المصادر اتوجدت، لكن حصل عطل مؤقت أثناء توليد الإجابة. "
-                "أعد المحاولة بعد لحظات، وإذا استمرت المشكلة راجع إعدادات نموذج اللغة."
-            ),
-            refused=True,
+            answer=answer_text,
+            citations=[],
+            confidence=GENERAL_KNOWLEDGE_FALLBACK_LABEL,
+            refused=False,
             risk_flag=risk.risk,
-            confidence=safety.CONFIDENCE_LOW,
             max_retrieval_score=max_score,
         )
 
     # ----------------------------------------------------------------
-    # 5) Validate Answer / Citations (unsupported claim detection)
+    # 4) Validate Answer / Citations (unsupported claim detection) —
+    # بس للإجابات المبنية فعلاً على سياق من الدليل
     # ----------------------------------------------------------------
     retrieved_texts = [doc.page_content for doc, _ in retrieved]
     unsupported = safety.unsupported_claims(answer_text, retrieved_texts)
     if unsupported:
-        # نخفّض الثقة بدل ما نرفض بالكامل، ونحذر المستخدم صراحة
         confidence = safety.CONFIDENCE_LOW
         answer_text += (
             "\n\n⚠️ تنبيه: جزء من الإجابة دي مش متأكدين إنه مدعوم بالكامل بالنص "
@@ -201,15 +169,3 @@ def run_pipeline(
         risk_flag=risk.risk,
         max_retrieval_score=max_score,
     )
-
-
-def _expand_hypertension_query(query: str) -> str:
-    """Optional legacy expansion for deployments that explicitly enable it."""
-    q = query.lower()
-    hypertension_terms = (
-        "ضغط الدم", "ضغط", "blood pressure", "hypertension", "high blood pressure",
-        "الضغط المرتفع", "الضغط العالي", "الضغط المنخفض", "الانقباضي", "الانبساطي",
-    )
-    if any(term in q for term in hypertension_terms):
-        return query + " hypertension high blood pressure blood pressure systolic diastolic treatment diagnosis measurement"
-    return query
