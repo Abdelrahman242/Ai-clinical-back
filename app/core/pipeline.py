@@ -1,12 +1,13 @@
 """
 app/core/pipeline.py
 
-Medical RAG pipeline:
+Flow:
 User
  -> Safety
- -> Retrieve documents
- -> Generate ONLY from retrieved documents
- -> Validate answer against retrieved documents
+ -> Retrieve closest documents
+ -> Use retrieved documents as context
+ -> LLM answers from closest available source context
+ -> Validate answer
  -> Return answer + citations
 """
 
@@ -18,6 +19,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from . import safety
 from .llm import get_llm, get_prompt_template, get_small_talk_prompt
 from .vectorstore import similarity_search_with_score
+
+
+GENERAL_KNOWLEDGE_FALLBACK_LABEL = "Source Retrieved"
 
 
 @dataclass
@@ -118,7 +122,7 @@ def run_pipeline(
         )
 
     # ================================================================
-    # 3) RETRIEVE
+    # 3) RETRIEVE CLOSEST DOCUMENTS
     # ================================================================
 
     retrieved = similarity_search_with_score(
@@ -141,7 +145,7 @@ def run_pipeline(
     print("\n========== RETRIEVAL DEBUG ==========")
     print("Project ID:", project_id)
     print("Query:", query)
-    print("Retrieved:", len(retrieved))
+    print("Retrieved count:", len(retrieved))
     print("Max score:", max_score)
     print("Confidence:", confidence)
 
@@ -165,15 +169,14 @@ def run_pipeline(
     print("=====================================\n")
 
     # ================================================================
-    # 4) NO SOURCE -> DO NOT ANSWER FROM GENERAL KNOWLEDGE
+    # 4) NO DOCUMENTS AT ALL
     # ================================================================
 
     if not retrieved:
 
         return PipelineResult(
             answer=(
-                "لا توجد معلومات كافية في المصادر الطبية المسجلة "
-                "للإجابة عن هذا السؤال."
+                "لا توجد مستندات متاحة في قاعدة المعرفة لهذا المشروع."
             ),
             citations=[],
             confidence=safety.CONFIDENCE_INSUFFICIENT,
@@ -183,17 +186,17 @@ def run_pipeline(
         )
 
     # ================================================================
-    # 5) BUILD CITATIONS
+    # 5) CITATIONS
     # ================================================================
 
     citations = _build_citations(retrieved)
 
     # ================================================================
-    # 6) BUILD CONTEXT
+    # 6) USE THE CLOSEST RETRIEVED CONTEXT
     #
     # IMPORTANT:
-    # كل الـretrieved documents تدخل للـLLM.
-    # مفيش General Knowledge fallback.
+    # We intentionally do NOT reject context because of the score.
+    # If FAISS retrieved documents, we use them.
     # ================================================================
 
     context_text = "\n\n".join(
@@ -202,7 +205,7 @@ def run_pipeline(
     )
 
     # ================================================================
-    # 7) GENERATE FROM SOURCE ONLY
+    # 7) GENERATION
     # ================================================================
 
     llm = get_llm()
@@ -221,7 +224,7 @@ def run_pipeline(
     answer_text = response.content
 
     # ================================================================
-    # 8) VALIDATE AGAINST SOURCE
+    # 8) VALIDATION
     # ================================================================
 
     retrieved_texts = [
@@ -238,9 +241,14 @@ def run_pipeline(
 
         confidence = safety.CONFIDENCE_LOW
 
-        answer_text = (
-            "لم أجد في المصادر المسترجعة معلومات كافية "
-            "لدعم جميع تفاصيل الإجابة المطلوبة."
+        # IMPORTANT:
+        # Don't throw away the answer completely.
+        # Keep the answer but clearly indicate that some parts
+        # may not be fully supported by the retrieved chunks.
+
+        answer_text += (
+            "\n\n⚠️ بعض تفاصيل الإجابة قد لا تكون مدعومة "
+            "بشكل كامل بالمقاطع المسترجعة."
         )
 
     # ================================================================
