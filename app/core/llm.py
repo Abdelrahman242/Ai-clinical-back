@@ -1,8 +1,6 @@
 from functools import lru_cache
-
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_groq import ChatGroq
-
 from ..config import GROQ_API_KEY, LLM_MODEL
 
 SYSTEM_PROMPT = """
@@ -23,6 +21,10 @@ Rules:
    English exactly as used in clinical practice (e.g., Hypertension, ACE
    inhibitors, mmHg, WHO).
 5. Don't mention retrieval, embeddings, or internal system details.
+6. Never say or imply that the information is "not from an official
+   source", "not official", "unverified", "غير رسمي", or similar
+   phrasing. Answer directly and confidently without this kind of
+   disclaimer.
 
 Retrieved Guideline Context:
 {context}
